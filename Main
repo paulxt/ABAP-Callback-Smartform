@@ -1,0 +1,776 @@
+REPORT 516 MESSAGE-ID zsd.
+***********************************************************************
+* Description  : 銷貨單套印
+***********************************************************************
+INCLUDE zrsdsd516top.
+* declaration of data
+INCLUDE rle_delnote_data_declare.
+* definition of forms
+INCLUDE rle_delnote_forms.
+INCLUDE rle_print_forms.
+TABLES: likp, lips.
+***********************************************************************
+* INITIALIZATION
+***********************************************************************
+INITIALIZATION.
+***********************************************************************
+*AT SELECTION SCREEN
+***********************************************************************
+AT SELECTION-SCREEN.
+***********************************************************************
+* Start-of-selection PAUL
+***********************************************************************
+START-OF-SELECTION.
+***********************************************************************
+* End-of-selection PAUL
+***********************************************************************
+END-OF-SELECTION.
+  PERFORM print_data.
+*&---------------------------------------------------------------------*
+*& Form read_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM read_data USING l_objky.
+
+  SELECT lfart vtext INTO CORRESPONDING FIELDS OF TABLE t_tvlkt FROM tvlkt WHERE spras = sy-langu.
+  SELECT kunnr name1 INTO CORRESPONDING FIELDS OF TABLE t_kna1 FROM kna1 WHERE spras = sy-langu.
+  SELECT kvgr3 bezei INTO CORRESPONDING FIELDS OF TABLE t_tvv3t
+    FROM tvv3t WHERE spras = sy-langu.
+  SELECT addrnumber tel_number INTO CORRESPONDING FIELDS OF TABLE t_adr2
+    FROM adr2.
+  SELECT addrnumber name1 post_code1 city1 street name_co INTO CORRESPONDING FIELDS OF TABLE t_adrc
+    FROM adrc.
+  SELECT vbeln zuonr taxk1 belnr xblnr fksto sfakn INTO CORRESPONDING FIELDS OF TABLE t_vbrk FROM vbrk.
+  SORT t_vbrk BY vbeln.
+  DELETE t_vbrk WHERE fksto IS NOT INITIAL.
+  DELETE t_vbrk WHERE sfakn IS NOT INITIAL.
+  SELECT vbeln posnr vgbel vgpos netwr waerk fkimg mwsbp INTO CORRESPONDING FIELDS OF TABLE t_vbrp FROM vbrp.
+  SELECT vbeln parvw kunnr adrnr INTO CORRESPONDING FIELDS OF TABLE t_par FROM vbpa .
+  SELECT knumv knumh kschl kbetr kwert INTO CORRESPONDING FIELDS OF TABLE t_prcd FROM prcd_elements.
+  SELECT werks name1 INTO CORRESPONDING FIELDS OF TABLE t_t001w FROM t001w.
+  SELECT matnr maktx INTO CORRESPONDING FIELDS OF TABLE t_makt FROM makt.
+  SELECT kunnr zz1_trssale_csa INTO CORRESPONDING FIELDS OF TABLE t_knvv FROM knvv.
+  SELECT lifnr name1 INTO CORRESPONDING FIELDS OF TABLE t_lfa1 FROM lfa1.
+
+  SELECT vbeln auart netwr knumv FROM vbak INTO CORRESPONDING FIELDS OF TABLE t_vbak.
+  SELECT vbeln posnr kwmeng netpr netwr waerk mwsbp knumh INTO CORRESPONDING FIELDS OF TABLE t_vbap
+    FROM vbap.
+  SELECT zz1_truckno lifnr INTO CORRESPONDING FIELDS OF TABLE t_car FROM zmmm51.
+  SELECT bname persnumber INTO CORRESPONDING FIELDS OF TABLE t_usr21 FROM usr21.
+  SELECT persnumber name_text INTO CORRESPONDING FIELDS OF TABLE t_adrp FROM adrp.
+  SELECT bukrs adrnr INTO CORRESPONDING FIELDS OF TABLE t_t001 FROM t001.
+  SELECT p~objek p~atwrt b~atnam INTO CORRESPONDING FIELDS OF TABLE t_ausp
+    FROM ausp AS p
+    JOIN cabn AS b
+    ON p~atinn = b~atinn.
+
+
+  "Header
+  SELECT vbeln knumv kunnr lfart zz1_truckno_dlh zz1_sealnumber_dlh btgew gewei waerk ernam vkorg
+    APPENDING CORRESPONDING FIELDS OF TABLE t_head
+    FROM likp
+    WHERE vbeln = l_objky.
+
+  "Detail
+  SELECT vbeln posnr matnr kdmat matwa arktx charg lfimg spart
+          lgort werks vgtyp vgbel vgpos kvgr3 kvgr4 vfdat vrkme
+    APPENDING CORRESPONDING FIELDS OF TABLE t_det FROM lips
+    WHERE vbeln = l_objky.
+
+
+  w_objky = l_objky.
+
+  PERFORM get_desc.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_desc
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_desc .
+  CLEAR: wa_head, wa_det.
+  CLEAR w_vgbel.
+  "DETAIL DATA
+  LOOP AT t_det INTO wa_det WHERE vbeln = w_objky.
+
+    "Get First VGBEL
+    IF wa_det-posnr = '000010'.
+        w_vgbel = wa_det-vgbel.
+    ENDIF.
+    "IF VGBEL is initial, gives it first item's.
+    IF wa_det-vgbel IS INITIAL.
+        wa_det-vgbel = w_vgbel.
+    ENDIF.
+
+    IF wa_det-vgpos IS INITIAL.
+      wa_det-vgpos = wa_det-posnr.
+    ENDIF.
+
+    "確認批號是否與明細同一筆
+    IF wa_det-posnr+0(1) = '0' AND wa_det-charg IS NOT INITIAL.
+        MOVE-CORRESPONDING wa_det TO wa_detadd.
+        APPEND wa_detadd TO t_detadd.
+    ENDIF.
+
+    "物料選擇
+    IF wa_det-posnr+0(1) = '0'.
+      IF wa_det-kdmat IS NOT INITIAL.
+        wa_det-material = wa_det-kdmat.
+      ELSEIF wa_det-kdmat IS NOT INITIAL.
+        wa_det-material = wa_det-matwa.
+      ELSE.
+        wa_det-material = wa_det-matnr.
+      ENDIF.
+    ENDIF.
+
+    "稅別
+    CLEAR wa_prcd.
+    IF sy-tabix = 1.
+        READ TABLE t_vbak INTO wa_vbak WITH KEY vbeln = wa_det-vgbel.
+        LOOP AT t_prcd INTO wa_prcd WHERE knumv = wa_vbak-knumv.
+          CASE wa_prcd-kschl.
+            WHEN 'PR00'.
+              wa_det-tax = '應稅外加'.
+            WHEN 'PR01'.
+              wa_det-tax = '應稅內含'.
+            WHEN OTHERS.
+          ENDCASE.
+        ENDLOOP.
+    ENDIF.
+
+
+    "價格條件傳給Header
+    CLEAR wa_prcd.
+    LOOP AT t_prcd INTO wa_prcd WHERE knumh = wa_det-knumh.
+      IF wa_prcd-kschl = 'PR00' OR wa_prcd-kschl = 'PR01'.
+        wa_det-kschl = wa_prcd-kschl.
+      ENDIF.
+    ENDLOOP.
+
+    "計算金額
+    IF wa_det-material IS NOT INITIAL.
+
+        CLEAR wa_vbrk.
+        READ TABLE t_vbrk INTO wa_vbrk WITH KEY zuonr = wa_det-vbeln.
+        CLEAR wa_vbrp.
+        READ TABLE t_vbrp INTO wa_vbrp WITH KEY vbeln = wa_vbrk-vbeln vgbel = wa_det-vbeln vgpos = wa_det-posnr.
+        wa_det-waerk = wa_vbrp-waerk.
+
+        IF wa_vbrp-netwr IS NOT INITIAL.
+          wa_det-price_c = wa_vbrp-netwr * 100.
+          wa_det-netwr_c = wa_vbrp-netwr + wa_vbrp-mwsbp.
+          wa_det-netwr_c = wa_det-netwr_c * 100.
+          wa_det-price = wa_det-price_c.
+          wa_det-netwr = wa_det-netwr_c.
+        ELSE.
+          wa_det-price = '0'.
+          wa_det-netwr = '0'.
+        ENDIF.
+
+        "單價
+        IF wa_vbrp-netwr IS NOT INITIAL.
+          wa_det-netpr_c = wa_vbrp-netwr / wa_vbrp-fkimg.
+          wa_det-netpr_c = wa_det-netpr_c * 100.
+          wa_det-netpr = wa_det-netpr_c.
+        ELSE.
+          wa_det-netpr = '0'.
+        ENDIF.
+    ELSE.
+        CLEAR: wa_det-netpr, wa_det-netwr.
+    ENDIF.
+
+    "去除小數位
+    CONDENSE wa_det-price NO-GAPS.
+    SHIFT wa_det-price RIGHT DELETING TRAILING '0'.
+    SHIFT wa_det-price RIGHT DELETING TRAILING '.'.
+
+    CONDENSE wa_det-netwr NO-GAPS.
+    SHIFT wa_det-netwr RIGHT DELETING TRAILING '0'.
+    SHIFT wa_det-netwr RIGHT DELETING TRAILING '.'.
+
+    "備註第一行
+    IF wa_det-kvgr3 = '1' AND wa_det-posnr = '000010'.
+      wa_det-note1 = '司機代收'.
+    ENDIF.
+
+    "加總數量
+    IF wa_det-lfimg = 0.
+      CLEAR wa_vbap.
+      READ TABLE t_vbap INTO wa_vbap WITH KEY vbeln = wa_det-vgbel posnr = wa_det-vgpos.
+      wa_det-lfimg = wa_vbap-kwmeng.
+    ENDIF.
+    wa_det-quantity = wa_det-lfimg.
+
+    CONDENSE wa_det-quantity NO-GAPS.
+    SHIFT wa_det-quantity RIGHT DELETING TRAILING '0'.
+    SHIFT wa_det-quantity RIGHT DELETING TRAILING '.'.
+
+    "抓入夥伴
+    CLEAR wa_par.
+    READ TABLE t_par INTO wa_par WITH KEY vbeln = wa_det-vgbel parvw = 'AG'.
+    wa_det-kunnr = wa_par-kunnr.
+
+    CLEAR wa_par.
+    READ TABLE t_par INTO wa_par WITH KEY vbeln = wa_det-vgbel.
+    wa_det-adrnr = wa_par-adrnr.
+
+    "備註第二行
+    CLEAR wa_knvv.
+    READ TABLE t_knvv INTO wa_knvv WITH KEY kunnr = wa_det-kunnr .
+    IF wa_knvv-zz1_trssale_csa IS NOT INITIAL AND wa_det-posnr = '000010'.
+      wa_det-note2 = '委託代銷'.
+    ENDIF.
+
+
+    CLEAR wa_ausp.
+    READ TABLE t_ausp INTO wa_ausp WITH KEY objek = wa_det-matnr atnam = 'Z_FS_MC_007'.
+    IF wa_ausp-atwrt IS NOT INITIAL.
+      wa_det-rspo = 'X'.
+    ENDIF.
+
+    CLEAR wa_ausp.
+    READ TABLE t_ausp INTO wa_ausp WITH KEY objek = wa_det-matnr atnam = 'Z_FS_MC_002'.
+    IF wa_ausp-atwrt IS NOT INITIAL.
+      w_op = 'X'.
+    ENDIF.
+
+
+    MODIFY t_det FROM wa_det.
+    CLEAR wa_det.
+  ENDLOOP.
+
+  SORT t_det BY vbeln posnr.
+  "批號放在明細頭
+  IF t_detadd IS NOT INITIAL.
+      LOOP AT t_detadd INTO wa_detadd.
+          MOVE-CORRESPONDING wa_detadd TO wa_det.
+          APPEND wa_det TO t_det.
+          CLEAR: wa_detadd, wa_det.
+      ENDLOOP.
+      REFRESH t_detadd.
+  ENDIF.
+
+*  "HEADER DATA
+  CLEAR wa_head.
+  LOOP AT t_head INTO wa_head WHERE vbeln = w_objky.
+
+    "抓明細資料
+    CLEAR wa_det.
+    READ TABLE t_det INTO wa_det WITH KEY vbeln = wa_head-vbeln.
+    "工廠及工廠名稱
+    wa_head-werks = wa_det-werks.
+    IF wa_head-werks IS NOT INITIAL.
+      READ TABLE t_t001w INTO wa_t001w WITH KEY werks = wa_head-werks.
+      wa_head-name1_w = wa_t001w-name1.
+    ENDIF.
+    "傳入
+    wa_head-vgtyp = wa_det-vgtyp.
+    IF wa_head-vgtyp = 'C' OR wa_head-vgtyp = 'I'.
+      "傳入銷售單號
+      wa_head-vgbel = wa_det-vgbel.
+      "銷售單號結合
+      CLEAR wa_vbak.
+      READ TABLE t_vbak INTO wa_vbak WITH KEY vbeln = wa_head-vgbel.
+      CONCATENATE wa_vbak-auart wa_head-vgbel INTO wa_head-vbeln_vf SEPARATED BY space.
+    ENDIF.
+    "倉庫
+    wa_head-lgort = wa_det-lgort.
+    "部門
+    wa_head-spart = wa_det-spart.
+    wa_head-kvgr3 = wa_det-kvgr3.
+    wa_head-tax = wa_det-tax.
+
+    "申請運費
+    IF wa_det-kvgr4 = 'Y' OR wa_det-kvgr4 = 'T'.
+      wa_head-v_l = 'V'.
+    ELSEIF wa_det-kvgr4 = 'N'.
+      wa_head-v_r = 'V'.
+    ELSE.
+      wa_head-v_l = ' '.
+      wa_head-v_r = ' '.
+    ENDIF.
+
+    "付款方
+    CLEAR wa_par.
+    READ TABLE t_par INTO wa_par WITH KEY vbeln = wa_head-vgbel parvw = 'RG'.
+    wa_head-payer = wa_par-kunnr.
+
+    "串接
+    CLEAR wa_par.
+    READ TABLE t_par INTO wa_par WITH KEY vbeln = wa_head-vgbel parvw = 'WE'.
+    wa_head-adrnr = wa_par-adrnr.
+
+    "Name
+    CLEAR wa_adrc.
+    READ TABLE t_adrc INTO wa_adrc WITH KEY addrnumber = wa_head-adrnr.
+    wa_head-name1 = wa_adrc-name1.
+    "Address
+    CONCATENATE wa_adrc-post_code1 wa_adrc-city1 wa_adrc-street INTO wa_head-addr.
+
+    "送貨方式
+    CLEAR wa_tvv3t.
+    READ TABLE t_tvv3t INTO wa_tvv3t WITH KEY kvgr3 = wa_head-kvgr3.
+    wa_head-bezei = wa_tvv3t-bezei.
+
+    "發票號碼
+    CLEAR wa_vbrk.
+    READ TABLE t_vbrk INTO wa_vbrk WITH KEY zuonr = wa_head-vbeln.
+    wa_head-xblnr = wa_vbrk-xblnr.
+    wa_head-vbeln_vbrk = wa_vbrk-vbeln.
+
+    "發票種類
+    CASE wa_vbrk-taxk1.
+      WHEN '3'.
+        wa_head-rec_ty = '電子發票'.
+      WHEN '0'.
+        wa_head-rec_ty = '免開發票'.
+      WHEN '1'.
+        wa_head-rec_ty = '手開三聯'.
+      WHEN '2'.
+        wa_head-rec_ty = '手開二聯'.
+      WHEN '4'.
+        wa_head-rec_ty = '外銷免開'.
+    ENDCASE.
+
+
+
+    "rspo
+    CLEAR wa_det.
+    READ TABLE t_det INTO wa_det WITH KEY vbeln = wa_head-vbeln rspo = 'X'.
+    IF wa_det IS NOT INITIAL.
+      CLEAR wa_t001.
+      READ TABLE t_t001 INTO wa_t001 WITH KEY bukrs = wa_head-vkorg.
+      CLEAR wa_adrc.
+      READ TABLE t_adrc INTO wa_adrc WITH KEY addrnumber = wa_t001-adrnr.
+      wa_head-name_co = wa_adrc-name_co.
+      CONCATENATE wa_adrc-post_code1 wa_adrc-city1 wa_adrc-street INTO wa_head-addr_co.
+    ENDIF.
+
+    "出貨單號
+    CONCATENATE wa_head-lfart wa_head-vbeln INTO wa_head-vbeln1 SEPARATED BY space.
+
+    "交貨類型名稱
+    CLEAR wa_tvlkt.
+    READ TABLE t_tvlkt INTO wa_tvlkt WITH KEY lfart = wa_head-lfart.
+    CONCATENATE wa_head-name1_w wa_tvlkt-vtext  INTO wa_head-vtext SEPARATED BY '-'.
+
+    "Telephone
+    CLEAR wa_adr2.
+    READ TABLE t_adr2 INTO wa_adr2 WITH KEY addrnumber = wa_head-adrnr.
+    wa_head-tel_number = wa_adr2-tel_number.
+
+*****    * FOOTER DATA ***  **
+    "卡車抓供應商名稱
+    CLEAR wa_car.
+    READ TABLE t_car INTO wa_car WITH KEY zz1_truckno = wa_head-zz1_truckno_dlh.
+    CLEAR wa_lfa1.
+    READ TABLE t_lfa1 INTO wa_lfa1 WITH KEY lifnr = wa_car-lifnr.
+    wa_head-name_c = wa_lfa1-name1.
+
+    "金額加
+    CLEAR wa_det.
+    LOOP AT t_det INTO wa_det WHERE vbeln = wa_head-vbeln.
+      w_price_all = w_price_all + wa_det-price_c.
+      w_netwr_all = w_netwr_all + wa_det-netwr_c.
+    ENDLOOP.
+    "會總總金額
+    w_price_st = w_price_all.
+    w_netwr_st = w_netwr_all.
+
+    CONDENSE w_price_st NO-GAPS.
+    SHIFT w_price_st RIGHT DELETING TRAILING '0'.
+    SHIFT w_price_st RIGHT DELETING TRAILING '.'.
+
+    CONDENSE w_netwr_st NO-GAPS.
+    SHIFT w_netwr_st RIGHT DELETING TRAILING '0'.
+    SHIFT w_netwr_st RIGHT DELETING TRAILING '.'.
+
+    wa_head-price_all = w_price_st.
+    wa_head-netwr_all = w_netwr_st.
+
+    w_tax = w_netwr_all - w_price_all.
+
+    CONDENSE w_tax NO-GAPS.
+    SHIFT w_tax RIGHT DELETING TRAILING '0'.
+    SHIFT w_tax RIGHT DELETING TRAILING '.'.
+
+    IF w_tax IS INITIAL.
+      wa_head-price_tax = '0'.
+    ELSE.
+      wa_head-price_tax = w_tax.
+    ENDIF.
+    CLEAR: w_price_all, w_netwr_all, w_price_st, w_netwr_st, w_tax.
+
+    "業務員
+    CLEAR: wa_par, w_sales_ta, w_sales_af.
+    READ TABLE t_par INTO wa_par WITH KEY vbeln = wa_head-vgbel parvw = 'TA'.
+    w_sales_ta = wa_par-kunnr.
+    CLEAR wa_par.
+    READ TABLE t_par INTO wa_par WITH KEY vbeln = wa_head-vgbel parvw = 'AF'.
+    w_sales_af = wa_par-kunnr.
+    CLEAR wa_par.
+    READ TABLE t_par INTO wa_par WITH KEY vbeln = wa_head-vgbel parvw = 'AG'.
+    w_buyer = wa_par-kunnr.
+    CLEAR wa_kna1.
+    READ TABLE t_kna1 INTO wa_kna1 WITH KEY kunnr = w_buyer.
+*    IF wa_kna1-katr1 = 'Y'.
+      IF w_sales_ta IS NOT INITIAL AND w_sales_ta <> w_sales_af.
+        CLEAR wa_kna1.
+        READ TABLE t_kna1 INTO wa_kna1 WITH KEY kunnr = w_sales_af.
+        CONCATENATE w_sales_af wa_kna1-name1 INTO wa_head-sales.
+        CLEAR wa_kna1.
+        READ TABLE t_kna1 INTO wa_kna1 WITH KEY kunnr = w_sales_ta.
+        CONCATENATE wa_head-sales '(' wa_kna1-name1 ')' INTO wa_head-sales.
+      ELSE.
+        CLEAR wa_kna1.
+        READ TABLE t_kna1 INTO wa_kna1 WITH KEY kunnr = w_sales_af.
+        CONCATENATE w_sales_af wa_kna1-name1 INTO wa_head-sales SEPARATED BY space .
+      ENDIF.
+*    ENDIF.
+
+
+    "使用者
+    CLEAR wa_usr21.
+    READ TABLE t_usr21 INTO wa_usr21 WITH KEY bname = wa_head-ernam.
+    CLEAR wa_adrp.
+    READ TABLE t_adrp INTO wa_adrp WITH KEY persnumber = wa_usr21-persnumber.
+    wa_head-uname = wa_adrp-name_text.
+
+    "時間
+    CONCATENATE sy-datum+0(4) '/' sy-datum+4(2) '/' sy-datum+6(2) INTO wa_head-d.
+    CONCATENATE sy-uzeit+0(2) ':' sy-uzeit+2(2) INTO wa_head-t.
+    CONCATENATE wa_head-d wa_head-t INTO wa_head-time SEPARATED BY space.
+
+    "LOOP 明細
+    CLEAR: wa_det, w_count, w_num.
+    LOOP AT t_det INTO wa_det WHERE vbeln = wa_head-vbeln.
+      "銷售代號
+      IF wa_det-material IS NOT INITIAL .
+        w_count = w_count + 1.
+        wa_det-no = w_count.
+      ENDIF.
+
+      MODIFY t_det FROM wa_det.
+      CLEAR wa_det.
+      w_num = w_num + 1.
+    ENDLOOP.
+
+    CLEAR: w_page.
+    w_div = w_num DIV 7.
+    w_mod = w_num MOD 7.
+
+    IF w_mod = 0.
+      wa_head-page = w_div.
+    ELSEIF w_mod <> 0.
+      wa_head-page = w_div + 1.
+      wa_head-mod = w_mod.
+      "插入以下空白
+      wa_det-vbeln = wa_head-vbeln.
+      wa_det-material = '以下空白'.
+      wa_det-vgpos = '999999'.
+      APPEND wa_det TO t_det.
+      CLEAR: wa_det, w_div, w_mod.
+    ENDIF.
+
+    "總重量
+    w_btgew_st = wa_head-btgew.
+
+    CONDENSE w_btgew_st NO-GAPS.
+    SHIFT w_btgew_st RIGHT DELETING TRAILING '0'.
+    SHIFT w_btgew_st RIGHT DELETING TRAILING '.'.
+
+    wa_head-btgew_c = w_btgew_st.
+    CLEAR w_btgew_st.
+
+    "意見欄
+    IF w_op IS NOT INITIAL.
+      wa_head-op = '*'.
+    ENDIF.
+
+    MODIFY t_head FROM wa_head.
+    CLEAR wa_head.
+  ENDLOOP.
+
+  SORT t_det BY vgpos.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& INCLUDE          ZRSDSD509F98
+*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*&      Form  PRINT_DATA PAUL
+*&---------------------------------------------------------------------*
+FORM print_data.
+
+  control_parameters-no_dialog =      "是否彈出對話框
+  control_parameters-preview =        "預覽
+  output_options-tdnewid = 'X'.       "新的佇列請求
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname           = 'ZRSDSD516'
+    IMPORTING
+      fm_name            = w_fm_name
+    EXCEPTIONS
+      no_form            = 1
+      no_function_module = 2
+      OTHERS             = 3.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+    WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+  SORT t_head BY vbeln.
+
+  CLEAR wa_head.
+  LOOP AT t_head INTO wa_head.
+    AT FIRST.
+      control_parameters-no_close = 'X'.
+    ENDAT.
+    AT LAST.
+      control_parameters-no_close = space.
+    ENDAT.
+    CALL FUNCTION w_fm_name
+      EXPORTING
+        control_parameters = control_parameters
+        output_options     = output_options
+        user_settings      = space
+        is_nast            = nast
+        is_head            = wa_head
+        prog_id            = sy-repid.
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+             WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+    control_parameters-no_open = 'X'.
+  ENDLOOP.
+  CLEAR: control_parameters-no_close, control_parameters-no_open.
+ENDFORM.
+*---------------------------------------------------------------------*
+*       FORM ENTRY
+*---------------------------------------------------------------------*
+FORM entry USING return_code us_screen.
+  DATA lf_retcode TYPE sy-subrc.
+
+  REFRESH: t_head, t_det.
+
+  DATA: lw_field(100),
+        lw_field2(100).
+
+  FIELD-SYMBOLS: <fs1> TYPE ANY TABLE,
+                 <fs2>.
+
+  "2019/02/18 新增
+  IF sy-cprog = 'ZRSDSD033'.
+    us_screen = 'X'.
+    REFRESH t_nast.
+    lw_field = '(ZRSDSD033)T_NAST_SF'.
+    ASSIGN (lw_field) TO <fs1>.
+    IF sy-subrc = 0.
+      t_nast = <fs1>.
+    ENDIF.
+    lw_field2 = '(ZRSDSD033)WA_TNAPR-SFORM'.
+    ASSIGN (lw_field2) TO <fs2>.
+    IF sy-subrc = 0.
+      tnapr-sform = <fs2>.
+    ENDIF.
+  ELSEIF ( sy-tcode = 'VL01N' OR sy-tcode = 'VL02N' ) AND sy-ucomm = 'WABU_T'.
+    REFRESH t_nast.
+    CLEAR wa_nast.
+    IMPORT wa_tnapr-sform TO tnapr-sform FROM MEMORY ID 'ZZSFORM'.
+    IMPORT wa_nast FROM MEMORY ID 'ZZNAST'.
+    APPEND wa_nast TO t_nast.
+    FREE MEMORY ID: 'ZZNAST', 'ZZSFORM'.
+  ELSE.
+    REFRESH t_nast.
+    CLEAR wa_nast.
+    MOVE-CORRESPONDING nast TO wa_nast.
+    APPEND wa_nast TO t_nast.
+  ENDIF.
+
+  LOOP AT t_nast INTO wa_nast.
+    PERFORM read_data USING wa_nast-objky.
+  ENDLOOP.
+
+  SORT t_head BY vbeln.
+  SORT t_det BY vgpos.
+
+  xscreen = us_screen.
+  PERFORM processing USING    us_screen
+                     CHANGING lf_retcode.
+
+*  PERFORM print_data.
+
+
+  IF lf_retcode NE 0.
+    return_code = 1.
+  ELSE.
+    return_code = 0.
+  ENDIF.
+ENDFORM.                    "ENTRY
+*---------------------------------------------------------------------*
+*       FORM PROCESSING                                               *
+*---------------------------------------------------------------------*
+FORM processing USING    proc_screen
+                CHANGING cf_retcode.
+  DATA: ls_print_data_to_read TYPE ledlv_print_data_to_read.
+  DATA: ls_dlv_delnote        TYPE ledlv_delnote.
+  DATA: lf_fm_name            TYPE rs38l_fnam.
+  DATA: ls_control_param      TYPE ssfctrlop.
+  DATA: ls_composer_param     TYPE ssfcompop.
+  DATA: ls_recipient          TYPE swotobjid.
+  DATA: ls_sender             TYPE swotobjid.
+  DATA: lf_formname           TYPE tdsfname.
+  DATA: ls_addr_key           LIKE addr_key.
+  DATA: ls_job_info           TYPE ssfcrescl.
+  DATA: l_spoolid             TYPE rspoid.
+
+
+DATA: lwa_lips  TYPE lips,
+      lwa_t001k TYPE t001k,
+      lwa_tvko  TYPE tvko.
+
+  lf_formname = tnapr-sform.
+
+*   determine print data
+  PERFORM set_print_data_to_read USING    lf_formname
+                                 CHANGING ls_print_data_to_read
+                                 cf_retcode.
+
+
+*   determine foreign trade data
+  ls_print_data_to_read-it_ft = ls_print_data_to_read-it_confitm = 'X'.
+
+  CLEAR wa_head.
+  LOOP AT t_head INTO wa_head.
+    AT FIRST.
+      CLEAR ls_control_param-no_open.
+      ls_control_param-no_close = 'X'.
+    ENDAT.
+    AT LAST.
+      CLEAR ls_control_param-no_close.
+    ENDAT.
+
+    MOVE-CORRESPONDING wa_nast TO nast.
+*    IF cf_retcode = 0.
+*      CLEAR: ls_addr_key,ls_dlv_delnote.
+*     select print data
+*      PERFORM get_data USING    ls_print_data_to_read
+*                       CHANGING ls_addr_key
+*                                ls_dlv_delnote
+*                                cf_retcode.
+*    ENDIF.
+
+    IF cf_retcode = 0 AND sy-tcode <> 'ZSD2A'.
+      CLEAR: ls_composer_param,ls_recipient,ls_sender.
+      PERFORM set_print_param USING    ls_addr_key
+                              CHANGING ls_control_param
+                                       ls_composer_param
+                                       ls_recipient
+                                       ls_sender
+                                       cf_retcode.
+    ENDIF.
+
+    IF sy-tcode = 'ZSD2A'.
+      ls_control_param-no_dialog = 'X'.
+      ls_control_param-preview = 'X'.
+      ls_composer_param-tdnewid = 'X'.
+      ls_composer_param-tdiexit = 'X'.
+    ENDIF.
+
+    IF sy-ucomm = 'PRNT' OR sy-ucomm = 'VIEW'.
+      CLEAR: lwa_tvko.
+      SELECT SINGLE * FROM tvko INTO CORRESPONDING FIELDS OF lwa_tvko
+        WHERE vkorg = wa_head-vkorg.
+      IF sy-subrc = 0.
+        SELECT SINGLE zz1_zzusecode03 FROM zutm13 INTO ls_composer_param-tddest
+          WHERE zz1_zzutcode = 'Z_DN_PG_DN_PRINT' AND bukrs = lwa_tvko-bukrs
+            AND zz1_zzusecode01 = wa_head-werks AND zz1_zzusecode02 = sy-uname.
+        IF sy-subrc <> 0.
+          SELECT SINGLE zz1_zzusecode03 FROM zutm13 INTO ls_composer_param-tddest
+            WHERE zz1_zzutcode = 'Z_DN_PG_DN_PRINT' AND bukrs = lwa_tvko-bukrs
+              AND zz1_zzusecode01 = wa_head-werks AND zz1_zzusecode02 = ''.
+        ENDIF.
+      ENDIF.
+    ELSE.
+      IMPORT ls_composer_param-tddest FROM MEMORY ID 'ZZTDDEST'.
+    ENDIF.
+
+
+
+    IF cf_retcode = 0.
+*     determine smartform function module for delivery note
+      CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+        EXPORTING
+          formname           = lf_formname
+*         variant            = ' '
+*         direct_call        = ' '
+        IMPORTING
+          fm_name            = lf_fm_name
+        EXCEPTIONS
+          no_form            = 1
+          no_function_module = 2
+          OTHERS             = 3.
+      IF sy-subrc <> 0.
+*       error handling
+        cf_retcode = sy-subrc.
+        PERFORM protocol_update.
+      ENDIF.
+    ENDIF.
+
+    IF cf_retcode = 0.
+      CLEAR: ls_control_param-langu, ls_dlv_delnote-hd_gen-gi_date.
+      CALL FUNCTION lf_fm_name
+        EXPORTING
+          archive_index      = toa_dara
+          archive_parameters = arc_params
+          control_parameters = ls_control_param
+*         mail_appl_obj      =
+          mail_recipient     = ls_recipient
+          mail_sender        = ls_sender
+          output_options     = ls_composer_param
+          user_settings      = ' '
+          is_dlv_delnote     = ls_dlv_delnote
+          is_nast            = nast
+          is_head            = wa_head
+*              importing  document_output_info =
+          job_output_info    = ls_job_info
+*         job_output_options =
+        EXCEPTIONS
+          formatting_error   = 1
+          internal_error     = 2
+          send_error         = 3
+          user_canceled      = 4
+          OTHERS             = 5.
+
+      ls_control_param-no_open = 'X'.
+
+      IF sy-subrc <> 0.
+*       error handling
+        cf_retcode = sy-subrc.
+        PERFORM protocol_update.
+*         get SmartForm protocoll and store it in the NAST protocoll
+        PERFORM add_smfrm_prot.                  "INS_HP_335958
+*    Fehlermeldung bei Druckansicht ausgeben
+        IF ls_control_param-preview = 'X'.
+          MESSAGE ID syst-msgid TYPE syst-msgty NUMBER syst-msgno
+          WITH syst-msgv1 syst-msgv2 syst-msgv3 syst-msgv4.
+        ENDIF.
+      ELSE.
+        READ TABLE ls_job_info-spoolids INTO l_spoolid INDEX 1.
+        IF sy-subrc IS INITIAL.
+          EXPORT spoolid = l_spoolid TO MEMORY ID 'KYK_SPOOLID'.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+    CLEAR: control_parameters-no_close, control_parameters-no_open.
+  ENDLOOP.
+  FREE MEMORY ID 'ZZTDDEST'.
+ENDFORM.                    "PROCESSING
