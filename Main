@@ -1,8 +1,8 @@
 REPORT 516 MESSAGE-ID zsd.
 ***********************************************************************
-* Description  : 銷貨單套印
+* Description  : SalesOrder Printing
 ***********************************************************************
-INCLUDE zrsdsd516top.
+INCLUDE top.
 * declaration of data
 INCLUDE rle_delnote_data_declare.
 * definition of forms
