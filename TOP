@@ -1,0 +1,305 @@
+*&---------------------------------------------------------------------*
+*& INCLUDE          
+*&---------------------------------------------------------------------*
+DATA: w_count TYPE i,
+      w_num TYPE i,
+      w_lines TYPE i,
+      w_price_all TYPE lips-netwr,
+      w_netwr_all TYPE lips-netwr,
+      w_price_st TYPE string,
+      w_netwr_st TYPE string,
+      w_sales_ta TYPE kna1-kunnr,
+      w_sales_af TYPE kna1-kunnr,
+      w_buyer TYPE kna1-kunnr,
+      w_page TYPE i,
+      w_div TYPE p,
+      w_mod TYPE p,
+      w_lfimg_add TYPE p,
+      w_objky TYPE nast-objky,
+      w_tax TYPE string,
+      w_btgew_st TYPE string,
+      w_rspo(1),
+      w_op(1),
+      w_vgbel TYPE vgbel.
+
+"
+DATA: wa_nast LIKE nast,
+      t_nast LIKE STANDARD TABLE OF wa_nast,
+      wa_nast_sf LIKE nast,
+      t_nast_sf LIKE STANDARD TABLE OF wa_nast_sf,
+      wa_tnapr LIKE tnapr,
+      t_tnapr LIKE STANDARD TABLE OF wa_tnapr.
+
+** Header
+*DATA: BEGIN OF wa_head,
+*        adrnr TYPE vbpa-adrnr,
+*        knumv TYPE likp-knumv,
+*        waerk TYPE likp-waerk,
+*        vbeln TYPE likp-vbeln,                  "出貨單號      7.1
+*        payer TYPE likp-kunnr,                  "客戶代號(付款方) 1'
+*        kunnr TYPE likp-kunnr,
+*        tel_number TYPE adr2-tel_number,        "電話 (收貨方)  2'
+*        name1 TYPE adrc-name1,                  "客戶名稱(收貨方) 3'
+*        addr(100),                              "地址(收貨方)   4'
+*        name_co TYPE adrc-name_co,              "5.1'
+*        addr_co(100),                           "5.2'
+*        werks TYPE likp-werks,                  "工廠代號
+*        name1_w TYPE t001w-name1,               "工廠名稱  6.1'
+*        vtext(25),                              "交貨類型名稱 6.2'  6.1 + '-' + 6.2
+*        vbeln1(16),                             "出貨單號
+*        lfart TYPE likp-lfart,                  " 7.2 出貨單單別  交貨類型
+*        vgtyp TYPE lips-vgtyp,                  "8.2 如果不是C就不顯示
+*        vgbel TYPE lips-vgbel,                  "8.1 參考單號  concatenate vbak-auart    vgbel = vbeln '
+*        vbeln_vf(16),"傳送這一筆
+*        time(14),                               "9  時間 YYYY/MM/DD hh:mm
+*        page(3),                                "頁數  10'
+*        lgort TYPE lips-lgort,                  "倉庫     第一筆明細的儲存地點 傳給Header  11'
+*        spart TYPE lips-spart,                  "部門     第一筆明細的部門   12'
+*        sales(50),                              "業務 代號加上名稱 kunnr + name1  13'
+*        xblnr TYPE vbrk-xblnr,                  "發票號碼             14'
+*        rec_ty(4),                              "發票種類           15'  從第一筆detail 傳入 billing稅分類
+*        tax(5),                                 "稅別 16'
+*        kvgr3 TYPE lips-kvgr3,                  "送貨方式 17'
+*        bezei TYPE tvv3t-bezei,                 "送貨方式文字 17'
+**        xblnr TYPE vbrk-xblnr,                  " 18'
+*
+*        "Tail
+*        name_c TYPE zmmr50-name1,                            "車行 利用車號去主檔找車行 1 '
+*        zz1_truckno_dlh TYPE likp-zz1_truckno_dlh,          "車號 2 '
+*        v_l(1),                                               "申請運費 3'
+*        v_r(1),
+*        zz1_sealnumber_dlh TYPE likp-zz1_sealnumber_dlh,    "封條號碼 4'
+*        price_all TYPE lips-netwr,                          "貨品金額, 總金額 (稅前金額加總 5'
+*        netwr_all TYPE lips-netwr,                          "稅後 (稅後金額加總 6'
+*        btgew TYPE likp-btgew,                              "總重量  10 '
+*        price_tax TYPE lips-netwr,                          "稅額 總金額減到稅後的金額 11 '
+*        op(1),                                              "意見欄 13 '
+*        uname TYPE adrp-name_text,                          "填表人 14 '
+*      END OF wa_head,
+*      t_head LIKE STANDARD TABLE OF wa_head.
+
+DATA: wa_head LIKE zsdr55,
+      t_head LIKE STANDARD TABLE OF wa_head.
+
+
+*Detail
+DATA: BEGIN OF wa_det,
+        vbeln TYPE lips-vbeln,
+        matnr TYPE lips-matnr,
+        vgpos TYPE lips-vgpos,
+        knumh TYPE prcd_elements-knumh,
+        kunnr TYPE kna1-kunnr,
+
+        no(2),                                 "銷代 1'
+        material TYPE matnr,
+        kdmat TYPE lips-kdmat,                  "料號 2' 先抓客戶物料 沒有才顯示 matwa
+        matwa TYPE lips-matwa,                  "已輸入物料 2'
+        arktx TYPE lips-arktx,                  "物料說明 2.2'
+        charg TYPE lips-charg,                  "批號號碼 2.3'
+        posnr TYPE lips-posnr,                  "批號項目 2.4'
+        vfdat TYPE lips-vfdat,                  "項目效期
+        lfimg TYPE lips-lfimg,                  "數量 3.1'
+        quantity TYPE string,
+        vrkme TYPE lips-vrkme,
+        netpr TYPE string,                         "單價 4'
+        price TYPE string,                         "稅前金額 5'
+        netwr TYPE string,                         "稅後金額 6'
+        netpr_c TYPE p LENGTH 15 DECIMALS 3,                         "單價 4'
+        price_c TYPE p LENGTH 15 DECIMALS 3,                         "稅前金額 5'
+        netwr_c TYPE p LENGTH 15 DECIMALS 3,                         "稅後金額 6'
+        waerk TYPE vbap-waerk,
+        note1(10),                              "備註 送貨方式如果是'自運'，顯示'司機代收'
+        note2(10),                              "如果knvv 中欄位TRSSALE不是空白 顯示'委託代銷'
+        "表頭需要的欄位
+
+        kschl TYPE prcd_elements-kschl,
+        tax(5),                                 "傳入稅別
+        spart TYPE lips-spart,                  "第一筆傳給Header
+        lgort TYPE lips-lgort,                  "第一筆的儲存地點 傳給Header
+        werks TYPE lips-werks,                  "第一筆工廠傳給Header
+        vgtyp TYPE lips-vgtyp,                  "用來判斷是否傳給Header
+        vgbel TYPE lips-vgbel,                  "第一筆為Header需要的
+        kvgr4 TYPE lips-kvgr4,                  "用於表尾的判斷 如果為Y 表尾 v: v 如果不是Y v: null
+        kvgr3 TYPE lips-kvgr3,                  "送貨方式
+        rspo(1),
+        adrnr TYPE vbpa-adrnr,
+      END OF wa_det,
+      t_det LIKE STANDARD TABLE OF wa_det,
+      wa_detadd LIKE wa_det,
+      t_detadd LIKE STANDARD TABLE OF wa_detadd.
+
+DATA: BEGIN OF wa_t001,
+        bukrs TYPE t001-bukrs,
+        adrnr TYPE t001-adrnr,
+      END OF wa_t001,
+      t_t001 LIKE STANDARD TABLE OF wa_t001.
+
+DATA: BEGIN OF wa_vbak,
+        vbeln TYPE vbak-vbeln,
+        auart TYPE vbak-auart,
+        taxk1 TYPE vbrk-taxk1,  "vbrk傳過來的
+        knumv TYPE vbak-knumv,
+        netwr TYPE vbak-netwr,
+      END OF wa_vbak,
+      t_vbak LIKE STANDARD TABLE OF wa_vbak,
+      BEGIN OF wa_vbap,
+        vbeln TYPE vbap-vbeln,  "銷售單號
+        posnr TYPE vbap-posnr,  "項目
+        netpr TYPE vbap-netpr,
+        netwr TYPE vbap-netwr,
+        mwsbp TYPE vbap-mwsbp,
+        kwmeng TYPE vbap-kwmeng,
+        waerk TYPE vbap-waerk,
+        knumh TYPE vbap-knumh,
+      END OF wa_vbap,
+      t_vbap LIKE STANDARD TABLE OF wa_vbap.
+
+
+      "特性值
+DATA: BEGIN OF wa_ausp,
+        objek TYPE ausp-objek,
+        atnam TYPE cabn-atnam,
+        atwrt TYPE ausp-atwrt,
+      END OF wa_ausp,
+      t_ausp LIKE STANDARD TABLE OF wa_ausp.
+
+*Partner: Header(Payer)  收貨: WE / 業務員: AF / 付款人: RG
+DATA: BEGIN OF wa_par,
+        vbeln TYPE vbpa-vbeln,  "單號
+        parvw TYPE vbpa-parvw,  "夥伴功能
+        kunnr TYPE vbpa-kunnr,  "客戶代號
+        adrnr TYPE vbpa-adrnr,  "串接使用
+        tel_number TYPE adr2-tel_number,
+        addr(100),
+        name_co TYPE adrc-name_co,
+      END OF wa_par,
+      t_par LIKE STANDARD TABLE OF wa_par.
+
+"發票種類
+"若為3 : 則此處印出”電子發票”。
+"若為0 : 則此處印出”免開發票”。
+"若為1 : 則此處印出”手開三聯”。
+"若為2 : 則此處印出”手開二聯”。
+"若為4或5: 則此處印出”外銷免開”。
+"若出貨單後續未產生Billing，則此欄位將為空白
+DATA: BEGIN OF wa_vbrk,
+        vbeln TYPE vbrk-vbeln,
+        zuonr TYPE vbrk-zuonr,   "vbap的文件   需先串到vbak
+        taxk1 TYPE vbrk-taxk1,
+        belnr TYPE vbrk-belnr,
+        xblnr TYPE vbrk-xblnr,    "發票號碼
+        fksto TYPE vbrk-fksto,
+        sfakn TYPE vbrk-sfakn,
+      END OF wa_vbrk,
+      t_vbrk LIKE STANDARD TABLE OF wa_vbrk.
+
+DATA: BEGIN OF wa_vbrp,
+        vbeln TYPE vbrp-vbeln,
+        posnr TYPE vbrp-posnr,
+        vgbel TYPE vbrp-vgbel,
+        vgpos TYPE vbrp-vgpos,
+        netwr TYPE vbrp-netwr,
+        waerk TYPE vbrp-waerk,
+        fkimg TYPE vbrp-fkimg,
+        mwsbp TYPE vbrp-mwsbp,
+      END OF wa_vbrp,
+      t_vbrp LIKE STANDARD TABLE OF wa_vbrp.
+
+"判斷 稅別  MWSI 為稅額  PR00: 稅前  PR01: 稅後
+DATA: BEGIN OF wa_prcd,
+        knumv TYPE prcd_elements-knumv,
+        knumh TYPE prcd_elements-knumh,
+        kschl TYPE prcd_elements-kschl,
+        kwert TYPE prcd_elements-kwert,
+        kbetr TYPE prcd_elements-kbetr,
+      END OF wa_prcd,
+      t_prcd LIKE STANDARD TABLE OF wa_prcd.
+
+
+"出貨方式
+DATA: BEGIN OF wa_tvv3t,
+        kvgr3 TYPE tvv3t-kvgr3,
+        bezei TYPE tvv3t-bezei,
+      END OF wa_tvv3t,
+      t_tvv3t LIKE STANDARD TABLE OF wa_tvv3t.
+
+"Telephone
+DATA: BEGIN OF wa_adr2,
+        addrnumber TYPE adr2-addrnumber,
+        tel_number TYPE adr2-tel_number,
+      END OF wa_adr2,
+      t_adr2 LIKE STANDARD TABLE OF wa_adr2.
+"Address
+DATA: BEGIN OF wa_adrc,
+        addrnumber TYPE adrc-addrnumber,
+        name1 TYPE adrc-name1,
+        post_code1 TYPE adrc-post_code1,
+        city1 TYPE adrc-city1,
+        street TYPE adrc-street,
+        name_co TYPE adrc-name_co,
+      END OF wa_adrc,
+      t_adrc LIKE STANDARD TABLE OF wa_adrc.
+
+"工廠
+DATA: BEGIN OF wa_t001w,
+        werks TYPE t001w-werks,
+        name1 TYPE t001w-name1,
+      END OF wa_t001w,
+      t_t001w LIKE STANDARD TABLE OF wa_t001w.
+
+"料號說明
+DATA: BEGIN OF wa_makt,
+        matnr TYPE makt-matnr,
+        maktx TYPE makt-maktx,
+      END OF wa_makt,
+      t_makt LIKE STANDARD TABLE OF wa_makt.
+"判斷備註
+DATA: BEGIN OF wa_knvv,
+        kunnr TYPE knvv-kunnr,
+        zz1_trssale_csa TYPE knvv-zz1_trssale_csa,
+
+      END OF wa_knvv,
+      t_knvv LIKE STANDARD TABLE OF wa_knvv.
+"表尾使用
+DATA: BEGIN OF wa_lfa1,
+        lifnr TYPE lfa1-lifnr,
+        name1 TYPE lfa1-name1,
+      END OF wa_lfa1,
+      t_lfa1 LIKE STANDARD TABLE OF wa_lfa1.
+
+"出貨類型名稱
+DATA: BEGIN OF wa_tvlkt,
+        lfart TYPE tvlkt-lfart,
+        vtext TYPE tvlkt-vtext,
+      END OF wa_tvlkt,
+      t_tvlkt LIKE STANDARD TABLE OF wa_tvlkt.
+
+"卡車
+DATA: BEGIN OF wa_car,
+        zz1_truckno TYPE zmmm51-zz1_truckno,
+        lifnr TYPE zmmm51-lifnr,
+      END OF wa_car,
+      t_car LIKE STANDARD TABLE OF wa_car.
+
+"使用者名稱
+DATA: BEGIN OF wa_usr21,
+        bname TYPE usr21-bname,
+        persnumber TYPE usr21-persnumber,
+      END OF wa_usr21,
+      t_usr21 LIKE STANDARD TABLE OF wa_usr21.
+DATA: BEGIN OF wa_adrp,
+        persnumber TYPE adrp-persnumber,
+        name_text TYPE adrp-name_text,
+      END OF wa_adrp,
+      t_adrp LIKE STANDARD TABLE OF wa_adrp.
+
+DATA: BEGIN OF wa_kna1,
+        kunnr TYPE kna1-kunnr,
+        name1 TYPE kna1-name1,
+        katr1 TYPE kna1-katr1,
+      END OF wa_kna1,
+      t_kna1 LIKE STANDARD TABLE OF wa_kna1.
+
+DATA: output_options     TYPE ssfcompop,
+      control_parameters TYPE ssfctrlop,
+      w_fm_name          TYPE rs38l_fnam.
