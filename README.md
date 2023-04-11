@@ -2,4 +2,4 @@
 
 It's a Smartform program.
 
-It is also a callback function which I write for other program to call.
+It also include some callback functions which I write for other program to call.
